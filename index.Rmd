@@ -1,0 +1,214 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "Linda Zahora-Cathcart"
+date: "10/18/2019"
+output: html_document
+---
+### BACKGROUND
+One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, the goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
+
+Data comes courtesy of “Ugulino, W.; Cardador, D.; Vega, K.; Velloso, E.; Milidiu, R.; Fuks, H. Wearable Computing: Accelerometers’ Data Classification of Body Postures and Movements”.
+
+More information is available here: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har
+
+### OVERVIEW
+In this project we will predict the manner in which the participants exercised (the “classe” variable in the training set). Requirements for submission:
+
+* A report describing how you built your models
+* How you used cross validation
+* Expected out of sample error is
+* Why you made the choices you did 
+* Use your prediction model to predict 20 different test cases. 
+
+### LOAD LIBRARIES
+```{r}
+library(caret)
+library(corrplot)
+library(e1071)
+library(randomForest)
+```
+
+### LOAD TRAINING DATA
+```{r}
+# load the training data into RStudio
+train <- read.csv("pml-training.csv")
+
+# explore your training data
+str(train)
+dim(train)
+```
+
+### LOAD TESTING DATA
+```{r}
+# load the testing data into RStudio
+test <- read.csv("pml-testing.csv")
+
+# explore your testing data
+head(test)
+dim(test)
+```
+
+After viewing our training set we found that it contains 19,622 observations with 160 variables, and many of these columns contain blank or NA values. The testing set contains 20 observations and 160 variables along with blank or NA values. Before we can move further we will need to remove the blank or NA columns as well as the first seven columns since they aren’t need for our model and analysis.
+
+### CLEANING THE DATA
+```{r}
+# TRAINING DATA
+# set all blank cells to NA's
+train[train==""] <- NA
+# remove all columns with NA's 
+train1 <- train[, colSums(is.na(train)) == 0] 
+# remove first 7 columns 
+train2 <- train1[,-c(1:7)]
+# check dataset
+dim(train2)
+
+# TESTING DATA
+# set all blank cells to NA's
+test[test==""] <- NA
+# remove all columns with NA's 
+test1 <- test[, colSums(is.na(test)) == 0] 
+# remove first 7 columns 
+test2 <- test1[,-c(1:7)]
+# check dataset
+dim(test2)
+```
+
+### DATA SPLITTING
+Next, we'll partition our training set to begin our model testing. We'll use 75% of the train2$classe for training and 25% will be used for testing.
+
+```{r}
+# set your seed
+set.seed(1011) 
+
+inTrain <-createDataPartition(train2$classe, p=0.75, list=FALSE)
+
+TRAIN <- train2[inTrain,]
+dim(TRAIN)
+TEST <- train2[-inTrain,]
+dim(TEST)
+```
+
+### DISTRIBUTION
+In order to get a better idea of what to expect for our model predictions let's look at the current distribution for TRAIN$classe.
+
+```{r}
+# summarize distribution
+distribution <- prop.table(table(TRAIN$classe)) * 100
+cbind(freq=table(TRAIN$classe), percentage=distribution)
+```
+
+### CORRELATION
+Below you will find a correlation plot for the “TRAIN” training set., and the best correlations are in the darker shades of color.
+
+```{r}
+corTRAIN <- cor(TRAIN[, -53])
+corrplot(corTRAIN, type = "upper", method = "shade", tl.col="black")
+```
+
+Since there are numerous variables it’s hard to read this plot. With that being said, the best way to see variable correlation is with the following function:
+
+```{r}
+correlatedvariables = findCorrelation(corTRAIN, cutoff=0.75)
+names(TRAIN)[correlatedvariables]
+```
+
+This information will give us a good idea on how the variables will interact with each other when applied to our models.
+
+### CROSS VALIDATION
+Next, we'll use a 10-fold cross validation to estimate accuracy for each of our algorithms. 
+
+```{r}
+# run the algorithms using the 10-fold cross validation
+control <- trainControl(method="cv", number=10)
+metric <- "Accuracy"
+```
+
+### MODEL BUILDING
+We'll be using three different models to predict the outcome. They are:
+* Linear Discriminant Analysis (LDA)
+* Classification and Regression Trees (CART)
+* Random Forest (RF)
+
+These models were selected to give a good mixture of simple linear (LDA), nonlinear (CART) and complex nonlinear methods (RF). 
+
+#### Prediction with Linear Discriminant Analysis
+```{r}
+set.seed(1011)
+fit.lda <- train(classe~., data=TRAIN, method="lda", metric=metric, trControl=control)
+print(fit.lda)
+
+# validate model
+predictLDA <- predict(fit.lda, newdata=TEST)
+
+# confusion matrix
+confuseLDA <- confusionMatrix(TEST$classe, predictLDA)
+print(confuseLDA)
+
+# plot confusion matrix
+plot(confuseLDA$table, col = confuseLDA$byClass, 
+      main = paste("Accuracy =", round(confuseLDA$overall['Accuracy'], 4)))
+```
+
+As you can see from our confusion matrix our first model's accuracy is 70% so our out-of-sample-error would be 0.3 which isn't favorable.
+
+#### Prediction with Classification and Regression Trees
+```{r}
+set.seed(1011)
+fit.cart <- train(classe~., data=TRAIN, method="rpart", metric=metric, trControl=control)
+print(fit.cart)
+
+# validate model
+predictCART <- predict(fit.cart, newdata=TEST)
+
+# confusion matrix
+confuseCART <- confusionMatrix(TEST$classe, predictCART)
+print(confuseCART)
+
+# plot confusion matrix
+plot(confuseCART$table, col = confuseCART$byClass, 
+      main = paste("Accuracy =", round(confuseCART$overall['Accuracy'], 4)))
+```
+Next, we ran our CART Model and it predicted with a significantly lower accuracy than our first. Our confusion matrix revealed that accuracy is just under 50% thus giving us an out-of-sample-error of just over 0.5. 
+
+#### Prediction with Random Forest
+```{r}
+set.seed(1011)
+fit.rf <- train(classe~., data=TRAIN, method="rf", metric=metric, trControl=control)
+print(fit.rf)
+
+# validate model
+predictRF <- predict(fit.rf, newdata=TEST)
+
+# confusion matrix
+confuseRF <- confusionMatrix(TEST$classe, predictRF)
+print(confuseRF)
+
+# plot confusion matrix
+plot(confuseRF$table, col = confuseRF$byClass, 
+      main = paste("Accuracy =", round(confuseRF$overall['Accuracy'], 4)))
+
+
+names(fit.rf$finalModel)
+```
+Last, our Random Forest model, turned out well. Our confusion matrix shows that the accuracy is over 99% giving us our out-of-sample-error to be <0.1.
+
+### Summarize Accuracy of Models
+For a great comparison of all of our models we’ll use a table summary.
+```{r}
+#combine models into a list
+results <- resamples(list(lda=fit.lda, cart=fit.cart, rf=fit.rf))
+summary(results)
+
+# compare accuracy of models
+dotplot(results)
+```
+
+### CONCLUSION
+We can see that our Random Forest model is the best one to use so we’ll use it with our test dataset to predict our end result.
+
+These predictions are used to answer the “Course Project Prediction Quiz”.
+
+```{r}
+final.test <- predict(fit.rf,newdata=test2)
+print(final.test)
+```
